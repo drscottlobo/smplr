@@ -39,15 +39,14 @@ export function SamplerExample({ className }: { className?: string }) {
     const sampler = new Sampler(context, { buffers });
     sampler.output.addEffect("reverb", reverb, reverbMix);
 
-    sampler
-      .loaded()
+    sampler.load
       .then(() => {
         setStatus("ready");
         setSampler(sampler);
       })
       .catch((err) => {
         setStatus("error");
-        console.log("Instrument error", err);
+        console.error("Instrument error", err);
       });
   }
 

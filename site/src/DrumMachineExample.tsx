@@ -19,15 +19,14 @@ export function DrumMachineExample({ className }: { className?: string }) {
     const drums = new DrumMachine(context, { instrument });
     drums.output.addEffect("reverb", reverb, reverbMix);
 
-    drums
-      .loaded()
+    drums.load
       .then(() => {
         setStatus("ready");
         setDrumMachine(drums);
       })
       .catch((err) => {
         setStatus("error");
-        console.log("Instrument error", err);
+        console.error("Instrument error", err);
       });
   }
 

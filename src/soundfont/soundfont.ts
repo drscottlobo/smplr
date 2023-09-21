@@ -1,232 +1,172 @@
-import { findFirstSupportedFormat } from "../sampler/load-audio";
-import { findNearestMidi, toMidi } from "../sampler/midi";
-import { Sampler, SamplerAudioLoader } from "../sampler/sampler";
-
-export type SoundfontConfig = {
-  kit: "FluidR3_GM" | "MusyngKite" | string;
-  instrument: string;
-
-  destination: AudioNode;
-
-  detune: number;
-  volume: number;
-  velocity: number;
-  decayTime?: number;
-  lpfCutoffHz?: number;
-  extraGain?: number;
-};
-
-export class Soundfont extends Sampler {
-  constructor(
-    context: AudioContext,
-    options: Partial<SoundfontConfig> & { instrument: string }
-  ) {
-    const url = options.instrument.startsWith("http")
-      ? options.instrument
-      : gleitzKitUrl(options.instrument, options.kit ?? "MusyngKite");
-    super(context, {
-      destination: options.destination,
-
-      detune: options.detune,
-      volume: options.volume,
-      velocity: options.velocity,
-      decayTime: options.decayTime ?? 0.5,
-      lpfCutoffHz: options.lpfCutoffHz,
-      buffers: soundfontLoader(url),
-      noteToSample: (note, buffers, config) => {
-        let midi = toMidi(note.note);
-        return midi === undefined ? ["", 0] : findNearestMidi(midi, buffers);
-      },
-    });
-
-    // This is to compensate the low volume of the original samples
-    const extraGain = options.extraGain ?? 5;
-    const gain = new GainNode(context, { gain: extraGain });
-    this.output.addInsert(gain);
-  }
-}
-
-function soundfontLoader(url: string): SamplerAudioLoader {
-  return async (context, buffers) => {
-    const sourceFile = await (await fetch(url)).text();
-    const json = midiJsToJson(sourceFile);
-
-    const noteNames = Object.keys(json);
-    await Promise.all(
-      noteNames.map(async (noteName) => {
-        const midi = toMidi(noteName);
-        if (!midi) return;
-        const audioData = base64ToArrayBuffer(
-          removeBase64Prefix(json[noteName])
-        );
-        const buffer = await context.decodeAudioData(audioData);
-        buffers[midi] = buffer;
-      })
-    );
-  };
-}
-
-// convert a MIDI.js javascript soundfont file to json
-function midiJsToJson(source: string) {
-  const header = source.indexOf("MIDI.Soundfont.");
-  if (header < 0) throw Error("Invalid MIDI.js Soundfont format");
-  const start = source.indexOf("=", header) + 2;
-  const end = source.lastIndexOf(",");
-  return JSON.parse(source.slice(start, end) + "}");
-}
-
-function removeBase64Prefix(audioBase64: string) {
-  return audioBase64.slice(audioBase64.indexOf(",") + 1);
-}
-
-function base64ToArrayBuffer(base64: string) {
-  const decoded = window.atob(base64);
-  const len = decoded.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = decoded.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-function gleitzKitUrl(name: string, kit: string) {
-  const format = findFirstSupportedFormat(["ogg", "mp3"]) ?? "mp3";
-  return `https://gleitz.github.io/midi-js-soundfonts/${kit}/${name}-${format}.js`;
-}
+import { ChannelOptions } from "../player/channel";
+import { DefaultPlayer } from "../player/default-player";
+import {
+  createEmptyRegionGroup,
+  findFirstSampleInRegions,
+} from "../player/layers";
+import { AudioBuffers } from "../player/load-audio";
+import {
+  RegionGroup,
+  SampleOptions,
+  SampleStart,
+  SampleStop,
+} from "../player/types";
+import { HttpStorage, Storage } from "../storage";
+import {
+  SOUNDFONT_INSTRUMENTS,
+  SOUNDFONT_KITS,
+  gleitzKitUrl,
+  soundfontInstrumentLoader,
+} from "./soundfont-instrument";
+import {
+  fetchSoundfontLoopData,
+  getGoldstSoundfontLoopsUrl,
+} from "./soundfont-loops";
 
 export function getSoundfontKits() {
-  return ["MusyngKite", "FluidR3_GM"];
+  return SOUNDFONT_KITS;
 }
 
 export function getSoundfontNames() {
-  return [
-    "accordion",
-    "acoustic_bass",
-    "acoustic_grand_piano",
-    "acoustic_guitar_nylon",
-    "acoustic_guitar_steel",
-    "agogo",
-    "alto_sax",
-    "applause",
-    "bagpipe",
-    "banjo",
-    "baritone_sax",
-    "bassoon",
-    "bird_tweet",
-    "blown_bottle",
-    "brass_section",
-    "breath_noise",
-    "bright_acoustic_piano",
-    "celesta",
-    "cello",
-    "choir_aahs",
-    "church_organ",
-    "clarinet",
-    "clavinet",
-    "contrabass",
-    "distortion_guitar",
-    "drawbar_organ",
-    "dulcimer",
-    "electric_bass_finger",
-    "electric_bass_pick",
-    "electric_grand_piano",
-    "electric_guitar_clean",
-    "electric_guitar_jazz",
-    "electric_guitar_muted",
-    "electric_piano_1",
-    "electric_piano_2",
-    "english_horn",
-    "fiddle",
-    "flute",
-    "french_horn",
-    "fretless_bass",
-    "fx_1_rain",
-    "fx_2_soundtrack",
-    "fx_3_crystal",
-    "fx_4_atmosphere",
-    "fx_5_brightness",
-    "fx_6_goblins",
-    "fx_7_echoes",
-    "fx_8_scifi",
-    "glockenspiel",
-    "guitar_fret_noise",
-    "guitar_harmonics",
-    "gunshot",
-    "harmonica",
-    "harpsichord",
-    "helicopter",
-    "honkytonk_piano",
-    "kalimba",
-    "koto",
-    "lead_1_square",
-    "lead_2_sawtooth",
-    "lead_3_calliope",
-    "lead_4_chiff",
-    "lead_5_charang",
-    "lead_6_voice",
-    "lead_7_fifths",
-    "lead_8_bass__lead",
-    "marimba",
-    "melodic_tom",
-    "music_box",
-    "muted_trumpet",
-    "oboe",
-    "ocarina",
-    "orchestra_hit",
-    "orchestral_harp",
-    "overdriven_guitar",
-    "pad_1_new_age",
-    "pad_2_warm",
-    "pad_3_polysynth",
-    "pad_4_choir",
-    "pad_5_bowed",
-    "pad_6_metallic",
-    "pad_7_halo",
-    "pad_8_sweep",
-    "pan_flute",
-    "percussive_organ",
-    "piccolo",
-    "pizzicato_strings",
-    "recorder",
-    "reed_organ",
-    "reverse_cymbal",
-    "rock_organ",
-    "seashore",
-    "shakuhachi",
-    "shamisen",
-    "shanai",
-    "sitar",
-    "slap_bass_1",
-    "slap_bass_2",
-    "soprano_sax",
-    "steel_drums",
-    "string_ensemble_1",
-    "string_ensemble_2",
-    "synth_bass_1",
-    "synth_bass_2",
-    "synth_brass_1",
-    "synth_brass_2",
-    "synth_choir",
-    "synth_drum",
-    "synth_strings_1",
-    "synth_strings_2",
-    "taiko_drum",
-    "tango_accordion",
-    "telephone_ring",
-    "tenor_sax",
-    "timpani",
-    "tinkle_bell",
-    "tremolo_strings",
-    "trombone",
-    "trumpet",
-    "tuba",
-    "tubular_bells",
-    "vibraphone",
-    "viola",
-    "violin",
-    "voice_oohs",
-    "whistle",
-    "woodblock",
-    "xylophone",
-  ];
+  return SOUNDFONT_INSTRUMENTS;
+}
+
+type SoundfontConfig = {
+  kit: "FluidR3_GM" | "MusyngKite" | string;
+  instrument?: string;
+  instrumentUrl: string;
+  storage: Storage;
+  extraGain: number;
+  loadLoopData: boolean;
+  loopDataUrl?: string;
+};
+
+export type SoundfontOptions = Partial<
+  SoundfontConfig & SampleOptions & ChannelOptions
+>;
+
+export class Soundfont {
+  public readonly config: Readonly<SoundfontConfig>;
+  private readonly player: DefaultPlayer;
+  public readonly load: Promise<this>;
+  public readonly group: RegionGroup;
+  #hasLoops: boolean;
+
+  constructor(
+    public readonly context: AudioContext,
+    options: SoundfontOptions
+  ) {
+    this.config = getSoundfontConfig(options);
+    this.player = new DefaultPlayer(context, options);
+    this.group = createEmptyRegionGroup();
+
+    this.#hasLoops = false;
+    const loader = soundfontLoader(
+      this.config.instrumentUrl,
+      this.config.loopDataUrl,
+      this.player.buffers,
+      this.group
+    );
+    this.load = loader(context, this.config.storage).then((hasLoops) => {
+      this.#hasLoops = hasLoops;
+      return this;
+    });
+
+    const gain = new GainNode(context, { gain: this.config.extraGain });
+    this.player.output.addInsert(gain);
+  }
+
+  get output() {
+    return this.player.output;
+  }
+
+  get hasLoops() {
+    return this.#hasLoops;
+  }
+
+  async loaded() {
+    console.warn("deprecated: use load instead");
+    return this.load;
+  }
+
+  public disconnect() {
+    this.player.disconnect();
+  }
+
+  start(sample: SampleStart | string | number) {
+    const found = findFirstSampleInRegions(
+      this.group,
+      typeof sample === "object" ? sample : { note: sample }
+    );
+    if (!found) return () => undefined;
+
+    return this.player.start(found);
+  }
+
+  stop(sample?: SampleStop | string | number) {
+    return this.player.stop(sample);
+  }
+}
+
+function soundfontLoader(
+  url: string,
+  loopsUrl: string | undefined,
+  buffers: AudioBuffers,
+  group: RegionGroup
+) {
+  const loadInstrument = soundfontInstrumentLoader(url, buffers, group);
+  return async (context: BaseAudioContext, storage: Storage) => {
+    const [_, loops] = await Promise.all([
+      loadInstrument(context, storage),
+      fetchSoundfontLoopData(loopsUrl),
+    ]);
+
+    if (loops) {
+      group.regions.forEach((region) => {
+        const loop = loops[region.midiPitch];
+        if (loop) {
+          region.sample ??= {};
+          region.sample.loop = true;
+          region.sample.loopStart = loop[0];
+          region.sample.loopEnd = loop[1];
+        }
+      });
+    }
+    return !!loops;
+  };
+}
+
+function getSoundfontConfig(options: SoundfontOptions): SoundfontConfig {
+  if (!options.instrument && !options.instrumentUrl) {
+    throw Error("Soundfont: instrument or instrumentUrl is required");
+  }
+  const config = {
+    kit: "MusyngKite",
+    instrument: options.instrument,
+    storage: options.storage ?? HttpStorage,
+    // This is to compensate the low volume of the original samples
+    extraGain: options.extraGain ?? 5,
+    loadLoopData: options.loadLoopData ?? false,
+    loopDataUrl: options.loopDataUrl,
+    instrumentUrl: options.instrumentUrl ?? "",
+  };
+  if (config.instrument && config.instrument.startsWith("http")) {
+    console.warn(
+      "Use 'instrumentUrl' instead of 'instrument' to load from a URL"
+    );
+    config.instrumentUrl = config.instrument;
+    config.instrument = undefined;
+  }
+  if (config.instrument && !config.instrumentUrl) {
+    config.instrumentUrl = gleitzKitUrl(config.instrument, config.kit);
+  }
+
+  if (config.loadLoopData && config.instrument && !config.loopDataUrl) {
+    config.loopDataUrl = getGoldstSoundfontLoopsUrl(
+      config.instrument,
+      config.kit
+    );
+  }
+
+  return config;
 }

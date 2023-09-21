@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { getMalletNames, Mallet, Reverb } from "smplr";
-import { getAudioContext } from "./audio-context";
+import { CacheStorage, Reverb, Smolken, Storage, getSmolkenNames } from "smplr";
 import { ConnectMidi } from "./ConnectMidi";
 import { PianoKeyboard } from "./PianoKeyboard";
+import { getAudioContext } from "./audio-context";
 import { LoadWithStatus, useStatus } from "./useStatus";
 
 let reverb: Reverb | undefined;
-let instrumentNames = getMalletNames();
+let storage: Storage | undefined;
+let instrumentNames = getSmolkenNames();
 
-export function MalletExample({ className }: { className?: string }) {
-  const [instrument, setInstrument] = useState<Mallet | undefined>(undefined);
+export function SmolkenExample({ className }: { className?: string }) {
+  const [instrument, setInstrument] = useState<Smolken | undefined>(undefined);
   const [instrumentName, setInstrumentName] = useState<string>(
     instrumentNames[0]
   );
@@ -19,18 +20,19 @@ export function MalletExample({ className }: { className?: string }) {
   const [reverbMix, setReverbMix] = useState(0);
   const [volume, setVolume] = useState(100);
 
-  function loadMallet(instrumentName: string) {
+  function loadSmolken(instrumentName: string) {
     if (instrument) instrument.disconnect();
     setStatus("loading");
     const context = getAudioContext();
     reverb ??= new Reverb(context);
-    const newPiano = new Mallet(context, {
+    storage ??= new CacheStorage("smolken");
+    const newInstrument = new Smolken(context, {
       instrument: instrumentName,
       volume,
     });
-    newPiano.output.addEffect("reverb", reverb, reverbMix);
-    setInstrument(newPiano);
-    newPiano.load.then(() => {
+    newInstrument.output.addEffect("reverb", reverb, reverbMix);
+    setInstrument(newInstrument);
+    newInstrument.load.then(() => {
       setStatus("ready");
     });
   }
@@ -38,11 +40,11 @@ export function MalletExample({ className }: { className?: string }) {
   return (
     <div className={className}>
       <div className="flex gap-2 items-end mb-2">
-        <h1 className="text-3xl">Mallet</h1>
+        <h1 className="text-3xl">Smolken Double Bass</h1>
 
         <LoadWithStatus
           status={status}
-          onClick={() => loadMallet(instrumentName)}
+          onClick={() => loadSmolken(instrumentName)}
         />
         <ConnectMidi instrument={instrument} />
       </div>
@@ -54,7 +56,7 @@ export function MalletExample({ className }: { className?: string }) {
             value={instrumentName}
             onChange={(e) => {
               const instrumentName = e.target.value;
-              loadMallet(instrumentName);
+              loadSmolken(instrumentName);
               setInstrumentName(instrumentName);
             }}
           >

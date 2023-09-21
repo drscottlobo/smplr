@@ -1,17 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { getMalletNames, Mallet, Reverb } from "smplr";
-import { getAudioContext } from "./audio-context";
+import { useEffect, useState } from "react";
+import {
+  CacheStorage,
+  Reverb,
+  Storage,
+  Versilian,
+  getVersilianInstruments,
+} from "smplr";
 import { ConnectMidi } from "./ConnectMidi";
 import { PianoKeyboard } from "./PianoKeyboard";
+import { getAudioContext } from "./audio-context";
 import { LoadWithStatus, useStatus } from "./useStatus";
 
 let reverb: Reverb | undefined;
-let instrumentNames = getMalletNames();
+let storage: Storage | undefined;
+let instrumentNames: string[] = [];
 
-export function MalletExample({ className }: { className?: string }) {
-  const [instrument, setInstrument] = useState<Mallet | undefined>(undefined);
+// https://smpldsnds.github.io/sgossner-vcsl/Electrophones/TX81Z/FM%20Piano.sfz
+
+export function VersilianExample({ className }: { className?: string }) {
+  const [instrument, setInstrument] = useState<Versilian | undefined>(
+    undefined
+  );
   const [instrumentName, setInstrumentName] = useState<string>(
     instrumentNames[0]
   );
@@ -19,18 +30,26 @@ export function MalletExample({ className }: { className?: string }) {
   const [reverbMix, setReverbMix] = useState(0);
   const [volume, setVolume] = useState(100);
 
-  function loadMallet(instrumentName: string) {
+  useEffect(() => {
+    getVersilianInstruments().then((names) => {
+      instrumentNames = names;
+      setInstrumentName(names[0]);
+    });
+  }, []);
+
+  function loadVersilian(instrumentName: string) {
     if (instrument) instrument.disconnect();
     setStatus("loading");
     const context = getAudioContext();
     reverb ??= new Reverb(context);
-    const newPiano = new Mallet(context, {
+    storage ??= new CacheStorage("smolken");
+    const newInstrument = new Versilian(context, {
       instrument: instrumentName,
       volume,
     });
-    newPiano.output.addEffect("reverb", reverb, reverbMix);
-    setInstrument(newPiano);
-    newPiano.load.then(() => {
+    newInstrument.output.addEffect("reverb", reverb, reverbMix);
+    setInstrument(newInstrument);
+    newInstrument.load.then(() => {
       setStatus("ready");
     });
   }
@@ -38,11 +57,16 @@ export function MalletExample({ className }: { className?: string }) {
   return (
     <div className={className}>
       <div className="flex gap-2 items-end mb-2">
-        <h1 className="text-3xl">Mallet</h1>
+        <div className="flex flex-col">
+          <h1 className="text-3xl">Versilian </h1>
+          <h2>Versilian Community Sample Library</h2>
+        </div>
+
+        <div>(experimental)</div>
 
         <LoadWithStatus
           status={status}
-          onClick={() => loadMallet(instrumentName)}
+          onClick={() => loadVersilian(instrumentName)}
         />
         <ConnectMidi instrument={instrument} />
       </div>
@@ -54,7 +78,7 @@ export function MalletExample({ className }: { className?: string }) {
             value={instrumentName}
             onChange={(e) => {
               const instrumentName = e.target.value;
-              loadMallet(instrumentName);
+              loadVersilian(instrumentName);
               setInstrumentName(instrumentName);
             }}
           >

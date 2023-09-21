@@ -1,5 +1,5 @@
-import { midiVelToGain } from "./sampler/midi";
-import { createControl } from "./sampler/signals";
+import { createControl } from "./player/signals";
+import { midiVelToGain } from "./player/volume";
 import { SfzSampler, SfzSamplerConfig } from "./sfz/sfz-sampler";
 import { createTremolo } from "./tremolo";
 

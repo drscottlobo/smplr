@@ -1,11 +1,9 @@
-import { Channel } from "../sampler/channel";
-import { AudioBuffers } from "../sampler/load-audio";
-import { midiVelToGain, toMidi } from "../sampler/midi";
-import { SamplerNote } from "../sampler/sampler";
-import { createTrigger, Trigger } from "../sampler/signals";
-import { startSample, StopSample } from "../sampler/start-sample";
+import { DefaultPlayer } from "../player/default-player";
+import { toMidi } from "../player/midi";
+import { SampleStart, SampleStop } from "../player/types";
+import { HttpStorage, Storage } from "../storage";
 import { SfzInstrument } from "./sfz-kits";
-import { loadSfzBuffers, loadSfzInstrument } from "./sfz-load";
+import { SfzInstrumentLoader, loadSfzBuffers } from "./sfz-load";
 import { findRegions } from "./sfz-regions";
 import { Websfz } from "./websfz";
 
@@ -14,6 +12,7 @@ import { Websfz } from "./websfz";
  */
 export type SfzSamplerConfig = {
   instrument: SfzInstrument | Websfz | string;
+  storage?: Storage;
   destination: AudioNode;
   volume: number;
   velocity: number;
@@ -29,87 +28,85 @@ const EMPTY_WEBSFZ: Websfz = Object.freeze({
 });
 
 export class SfzSampler {
-  public readonly output: Omit<Channel, "input">;
-  public readonly buffers: AudioBuffers;
+  public readonly options: Readonly<Partial<SfzSamplerConfig>>;
+  private readonly player: DefaultPlayer;
   #websfz: Websfz;
-  #config: SfzSamplerConfig;
-  #stop: Trigger<StopSample | undefined>;
-  #load: Promise<void>;
-  #output: Channel;
+  public readonly load: Promise<this>;
 
   constructor(
     public readonly context: AudioContext,
     options: Partial<SfzSamplerConfig> & Pick<SfzSamplerConfig, "instrument">
   ) {
-    this.#config = {
-      instrument: options.instrument,
-      destination: options.destination ?? context.destination,
-      detune: 0,
-      volume: options.volume ?? 100,
-      velocity: options.velocity ?? 100,
-      decayTime: 0.3,
-    };
-    this.buffers = {};
-    this.#stop = createTrigger();
-
+    this.options = Object.freeze(Object.assign({}, options));
+    this.player = new DefaultPlayer(context, options);
     this.#websfz = EMPTY_WEBSFZ;
-    this.#load = loadSfzInstrument(options.instrument).then((result) => {
-      this.#websfz = Object.freeze(result);
-      return loadSfzBuffers(context, this.buffers, this.#websfz);
-    });
-    this.#output = new Channel(context, this.#config);
-    this.output = this.#output;
-  }
-  async loaded(): Promise<this> {
-    await this.#load;
-    return this;
+
+    const storage = options.storage ?? HttpStorage;
+    this.load = SfzInstrumentLoader(options.instrument, storage)
+      .then((result) => {
+        this.#websfz = Object.freeze(result);
+        return loadSfzBuffers(
+          context,
+          this.player.buffers,
+          this.#websfz,
+          storage
+        );
+      })
+      .then(() => this);
   }
 
-  start(note: SamplerNote | string | number) {
-    const _note: SamplerNote = typeof note === "object" ? note : { note: note };
-    const midi = toMidi(_note.note);
+  get output() {
+    return this.player.output;
+  }
+
+  async loaded() {
+    console.warn("deprecated: use load instead");
+    return this.load;
+  }
+
+  start(sample: SampleStart | string | number) {
+    this.#startLayers(typeof sample === "object" ? sample : { note: sample });
+  }
+
+  stop(sample?: SampleStop | string | number) {
+    this.player.stop(sample);
+  }
+
+  disconnect() {
+    this.player.disconnect();
+  }
+
+  #startLayers(sample: SampleStart) {
+    const midi = toMidi(sample.note);
     if (midi === undefined) return () => undefined;
 
-    const velocity = _note.velocity ?? this.#config.velocity;
+    const velocity = sample.velocity ?? this.options.velocity;
     const regions = findRegions(this.#websfz, { midi, velocity });
+
+    const onEnded = () => {
+      sample.onEnded?.(sample);
+    };
 
     const stopAll = regions.map(([group, region]) => {
       let target = region.pitch_keycenter ?? region.key ?? midi;
       const detune = (midi - target) * 100;
-
-      const destination = (this.output as Channel).input;
-
-      let buffer = this.buffers[region.sample];
-      if (!buffer) {
-        console.warn(`Sample not found: ${region.sample}`);
-        return () => undefined;
-      }
-
-      const onEnded = _note.onEnded;
-
-      return startSample({
-        buffer,
-        destination,
-        decayTime: _note.decayTime ?? this.#config.decayTime,
-        detune: detune + (_note.detune ?? this.#config.detune),
-        gain: midiVelToGain(_note.velocity ?? this.#config.velocity),
-        time: _note.time,
-        duration: _note.duration,
-        stop: this.#stop.subscribe,
-        stopId: _note.stopId ?? _note.note,
-        onEnded: onEnded ? () => onEnded(note) : undefined,
+      return this.player.start({
+        ...sample,
+        note: region.sample,
+        decayTime: sample.decayTime,
+        detune: detune + (sample.detune ?? this.options.detune ?? 0),
+        onEnded,
+        stopId: midi,
       });
     });
-    return (time?: number) => stopAll.forEach((stop) => stop(time));
-  }
 
-  stop(note?: StopSample | string | number) {
-    const note_ = typeof note === "object" ? note : { stopId: note };
-    this.#stop.trigger(note_);
-  }
-
-  disconnect() {
-    this.stop();
-    this.#output.disconnect();
+    switch (stopAll.length) {
+      case 0:
+        return () => undefined;
+      case 1:
+        return stopAll[0];
+      default:
+        return (time?: number) => stopAll.forEach((stop) => stop(time));
+    }
   }
 }

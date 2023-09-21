@@ -34,29 +34,59 @@ piano.start({ note: "C4" });
 
 See demo: https://danigb.github.io/smplr/
 
+`smplr` is still under development and features are considered unstable until v 1.0
+
+Read [CHANGELOG](https://github.com/danigb/smplr/blob/main/CHANGELOG.md) for changes.
+
 #### Library goals
 
 - No setup: specifically, all samples are online, so no need for a server.
 - Easy to use: everything should be intuitive for non-experienced developers
 - Decent sounding: uses high quality open source samples. For better or worse, it is sample based 🤷
 
-## Install
+## Setup
 
-Install with npm or your favourite package manager:
+You can install the library with a package manager or use it directly by importing from the browser.
+
+Samples are stored at https://github.com/smpldsnds and there is no need to download them. Kudos to all _samplerist_ 🙌
+
+#### Using a package manger
+
+Use npm or your favourite package manager to install the library to use it in your project:
 
 ```
 npm i smplr
 ```
 
-Samples are published at: https://github.com/danigb/samples
+#### Usage from the browser
 
-`smplr` is still under development and features are considered unstable. See [CHANGELOG](https://github.com/danigb/smplr/blob/main/CHANGELOG.md) for changes.
+You can import directly from the browser. For example:
+
+```html
+<html>
+  <body>
+    <button id="btn">play</button>
+  </body>
+  <script type="module">
+    import { SplendidGrandPiano } from "https://unpkg.com/smplr@0.10.0/dist/index.mjs"; // needs to be a url
+    const context = new AudioContext(); // create the audio context
+    const marimba = new SplendidGrandPiano(context); // create and load the instrument
+
+    document.getElementById("btn").onclick = () => {
+      context.resume(); // enable audio context after a user interaction
+      marimba.start({ note: 60, velocity: 80 }); // play the note
+    };
+  </script>
+</html>
+```
+
+The package needs to be serve as a url from a service like [unpkg](unpkg.com) or similar.
 
 ## Documentation
 
-### Create an instrument
+### Create and load an instrument
 
-All instruments follows the same pattern: `new Instrument(context, options?)`. For example:
+All instruments follows the same pattern: `new Instrument(context, options)`. For example:
 
 ```js
 import { SplendidGrandPiano, Soundfont } from "smplr";
@@ -68,10 +98,10 @@ const marimba = new Soundfont(context, { instrument: "marimba" });
 
 #### Wait for audio loading
 
-You can start playing notes as soon as one audio is loaded. But if you want to wait for all of them, you can use the `loaded()` function that returns a promise:
+You can start playing notes as soon as one audio is loaded. But if you want to wait for all of them, you can use the `load` property that returns a promise:
 
 ```js
-piano.loaded().then(() => {
+piano.load.then(() => {
   // now the piano is fully loaded
 });
 ```
@@ -79,27 +109,10 @@ piano.loaded().then(() => {
 Since the promise returns the instrument instance, you can create and wait in a single line:
 
 ```js
-const piano = await new SplendidGrandPiano(context).loaded();
+const piano = await new SplendidGrandPiano(context).load;
 ```
 
-#### Cache requests
-
-[Experimental]
-
-If you use default samples, they are stored at github pages. Github rate limits the number of requests per second. That could be a problem, specially if you're using a development environment with hot reload (like most React frameworks).
-
-If you want to cache samples on the browser you can use a `CacheStorage` object:
-
-```ts
-import { SplendidGrandPiano, CacheStorage } from "smplr";
-
-const context = new AudioContext();
-const storage = new CacheStorage();
-// First time the instrument loads, will fetch the samples from http. Subsequent times from cache.
-const piano = new SplendidGrandPiano(context, { storage });
-```
-
-⚠️ `CacheStorage` is based on [Cache API](https://developer.mozilla.org/en-US/docs/Web/API/Cache) and only works in secure environments that runs with `https`. Read your framework documentation for setup instructions. For example, in nextjs you can use https://www.npmjs.com/package/next-dev-https. For vite there's https://github.com/liuweiGL/vite-plugin-mkcert. Find the appropriate solution for your environment.
+⚠️ In versions lower than 0.8.0 a `loaded()` function was exposed instead.
 
 ### Play
 
@@ -138,7 +151,7 @@ piano.stop(60);
 
 #### Schedule notes
 
-You can schedule notes using `time` and `duration` properties. Both are measured in seconds, and time is the number of seconds since the AudioContext was created.
+You can schedule notes using `time` and `duration` properties. Both are measured in seconds. Time is the number of seconds since the AudioContext was created, like in `audioContext.currentTime`
 
 For example, next example plays a C major arpeggio, one note per second:
 
@@ -149,7 +162,33 @@ const now = context.currentTime;
 });
 ```
 
-#### onEnded event
+#### Looping
+
+You can loop a note by using `loop`, `loopStart` and `loopEnd`:
+
+```js
+const sampler = new Sampler(audioContext, { duh: "duh-duh-ah.mp3" });
+sampler.start({
+  note: "duh"
+  loop: true
+  loopStart: 1.0,
+  loopEnd: 9.0,
+});
+```
+
+If `loop` is true but `loopStart` or `loopEnd` are not specified, 0 and total duration will be used by default, respectively.
+
+#### Change volume
+
+Instrument `output` attribute represents the main output of the instrument. `output.setVolume` method accepts a number where 0 means no volume, and 127 is max volume without amplification:
+
+```js
+piano.output.setVolume(80);
+```
+
+⚠️ `volume` is global to the instrument, but `velocity` is specific for each note.
+
+#### Events
 
 You can add a `onEnded` callback that will be invoked when the note ends:
 
@@ -165,17 +204,9 @@ piano.start({
 
 The callback will receive as parameter the same object you pass to the `start` function;
 
-### Change volume
-
-Instrument `output` attribute represents the main output of the instrument. `output.setVolume` method accepts a number where 0 means no volume, and 127 is max volume without amplification:
-
-```js
-piano.output.setVolume(80);
-```
-
-Bear in mind that `volume` is global to the instrument, but `velocity` is specific for each note.
-
 ### Effects
+
+#### Reverb
 
 An packed version of [DattorroReverbNode](https://github.com/khoin/DattorroReverbNode) algorithmic reverb is included.
 
@@ -193,6 +224,25 @@ To change the mix level, use `output.sendEffect(name, mix)`:
 ```js
 piano.output.sendEffect("reverb", 0.5);
 ```
+
+### Experimental features
+
+#### Cache requests
+
+If you use default samples, they are stored at github pages. Github rate limits the number of requests per second. That could be a problem, specially if you're using a development environment with hot reload (like most React frameworks).
+
+If you want to cache samples on the browser you can use a `CacheStorage` object:
+
+```ts
+import { SplendidGrandPiano, CacheStorage } from "smplr";
+
+const context = new AudioContext();
+const storage = new CacheStorage();
+// First time the instrument loads, will fetch the samples from http. Subsequent times from cache.
+const piano = new SplendidGrandPiano(context, { storage });
+```
+
+⚠️ `CacheStorage` is based on [Cache API](https://developer.mozilla.org/en-US/docs/Web/API/Cache) and only works in secure environments that runs with `https`. Read your framework documentation for setup instructions. For example, in nextjs you can use https://www.npmjs.com/package/next-dev-https. For vite there's https://github.com/liuweiGL/vite-plugin-mkcert. Find the appropriate solution for your environment.
 
 ## Instruments
 
@@ -242,14 +292,27 @@ Alternatively, you can pass your custom url as the instrument. In that case, the
 
 ```js
 const marimba = new Soundfont(context, {
-  instrument:
+  instrumentUrl:
     "https://gleitz.github.io/midi-js-soundfonts/MusyngKite/marimba-mp3.js",
 });
 ```
 
-### Piano
+#### Soundfont sustained notes
 
-A sampled acoustic piano. It uses Steinway samples with 4 velocity layers from
+You can enable note looping to make note names indefinitely long by loading loop data:
+
+```js
+const marimba = new Soundfont(context, {
+  instrument: "cello",
+  loadLoopData: true,
+});
+```
+
+⚠️ This feature is still experimental and can produces clicks on lot of instruments.
+
+### SplendidGrandPiano
+
+A sampled acoustic piano. It uses Steinway samples with 4 velocity groups from
 [SplendidGrandPiano](https://github.com/sfzinstruments/SplendidGrandPiano)
 
 ```js
@@ -299,6 +362,20 @@ const mallet = new Mallet(new AudioContext(), {
 });
 ```
 
+### Mellotron
+
+Samples from [archive.org](https://archive.org/details/mellotron-archive-cd-rom-nki-wav.-7z)
+
+```js
+import { Mellotron, getMellotronNames } from "smplr";
+
+const instruments = getMellotronNames();
+
+const mallet = new Mellotron(new AudioContext(), {
+  instrument: instruments[0],
+});
+```
+
 ### Drum Machines
 
 Sampled drum machines. Samples from different sources:
@@ -317,6 +394,34 @@ const now = context.currentTime;
 drums.getVariations("kick").forEach((variation, index) => {
   drums.start({ note: variation, time: now + index });
 });
+```
+
+### Smolken double bass
+
+```js
+import { Smolken, getSmolkenNames } from "smplr";
+
+const instruments = getSmolkenNames(); // => Arco, Pizzicato & Switched
+
+// Create an instrument
+const context = new AudioContext();
+const doubleBass = await new Smolken(context, { instrument: "Arco" }).load;
+```
+
+### Versilian
+
+Versilian is a sample capable of using the [Versilian Community Sample Library](https://github.com/sgossner/VCSL).
+
+⚠️ Not all features are implemented. Some instruments may sound incorrect ⚠️
+
+```js
+import { Versilian, getVersilianInstruments } from "smplr";
+
+// getVersilianInstruments returns a Promise
+const instrumentNames = await getVersilianInstruments();
+
+const context = new AudioContext();
+const sampler = new Versilian(context, { instrument: instrumentNAmes[0] });
 ```
 
 ## License

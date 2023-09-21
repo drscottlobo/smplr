@@ -1,8 +1,11 @@
+import { ChannelOptions, OutputChannel } from "../player/channel";
+import { DefaultPlayer } from "../player/default-player";
 import {
+  AudioBuffers,
   findFirstSupportedFormat,
   loadAudioBuffer,
-} from "../sampler/load-audio";
-import { Sampler, SamplerAudioLoader } from "../sampler/sampler";
+} from "../player/load-audio";
+import { SampleOptions, SampleStart, SampleStop } from "../player/types";
 import { HttpStorage, Storage } from "../storage";
 import {
   DrumMachineInstrument,
@@ -24,43 +27,45 @@ const INSTRUMENTS: Record<string, string> = {
     "https://danigb.github.io/samples/drum-machines/Roland-CR-8000/dm.json",
 };
 
-export type DrumMachineConfig = {
-  instrument: string;
-  destination: AudioNode;
-  storage?: Storage;
+export type DrumMachineConfig = ChannelOptions &
+  SampleOptions & {
+    instrument: string;
+    storage?: Storage;
+  };
 
-  detune: number;
-  volume: number;
-  velocity: number;
-  decayTime?: number;
-  lpfCutoffHz?: number;
-};
-
-export class DrumMachine extends Sampler {
+export class DrumMachine {
   #instrument = EMPTY_INSTRUMENT;
+  private readonly player: DefaultPlayer;
+  public readonly load: Promise<this>;
+  public readonly output: OutputChannel;
+
   public constructor(
     context: AudioContext,
-    options: Partial<DrumMachineConfig> = {}
+    options?: Partial<DrumMachineConfig>
   ) {
+    options = Object.assign({}, options);
     const storage: Storage = options.storage ?? HttpStorage;
     const url = INSTRUMENTS[options.instrument ?? "TR-808"];
     if (!url) throw new Error("Invalid instrument: " + options.instrument);
-    const instrument = fetchDrumMachineInstrument(
-      url,
-      options.storage ?? HttpStorage
-    );
 
-    super(context, {
-      ...options,
-      buffers: drumMachineLoader(instrument, storage),
-      noteToSample: (note, buffers, config) => {
-        const sample = this.#instrument.nameToSample[note.note];
-        return [sample ?? "", 0];
-      },
-    });
+    const instrument = fetchDrumMachineInstrument(url, storage);
+    this.player = new DefaultPlayer(context, options);
+    this.output = this.player.output;
+    this.load = drumMachineLoader(
+      context,
+      this.player.buffers,
+      instrument,
+      storage
+    ).then(() => this);
+
     instrument.then((instrument) => {
       this.#instrument = instrument;
     });
+  }
+
+  async loaded() {
+    console.warn("deprecated: use load instead");
+    return this.load;
   }
 
   get sampleNames(): string[] {
@@ -70,23 +75,37 @@ export class DrumMachine extends Sampler {
   getVariations(name: string): string[] {
     return this.#instrument.sampleNameVariations[name] ?? [];
   }
+
+  start(sample: SampleStart) {
+    const sampleName = this.#instrument.nameToSample[sample.note];
+    return this.player.start({
+      ...sample,
+      note: sampleName ? sampleName : sample.note,
+      stopId: sample.stopId ?? sample.note,
+    });
+  }
+
+  stop(sample: SampleStop) {
+    return this.player.stop(sample);
+  }
 }
 
 function drumMachineLoader(
+  context: BaseAudioContext,
+  buffers: AudioBuffers,
   instrument: Promise<DrumMachineInstrument>,
   storage: Storage
-): SamplerAudioLoader {
+) {
   const format = findFirstSupportedFormat(["ogg", "m4a"]) ?? "ogg";
-  return async (context, buffers) => {
-    const dm = await instrument;
-    await Promise.all(
-      dm.samples.map(async (sample) => {
-        const url = `${dm.baseUrl}/${sample}.${format}`;
+  return instrument.then((data) =>
+    Promise.all(
+      data.samples.map(async (sample) => {
+        const url = `${data.baseUrl}/${sample}.${format}`;
         const sampleName =
           sample.indexOf("/") !== -1 ? sample : sample.replace("-", "/");
         const buffer = await loadAudioBuffer(context, url, storage);
         if (buffer) buffers[sampleName] = buffer;
       })
-    );
-  };
+    )
+  );
 }
