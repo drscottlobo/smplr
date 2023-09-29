@@ -1,5 +1,16 @@
 # smplr
 
+## 0.11.0
+
+- Add `onStart` sample event
+- Add `onStart` and `onEnded` global events
+
+## 0.10.3
+
+- 0.10.3 - Fix output connection
+- 0.10.2 - Remove console.log
+- 0.10.1 - Fix onEnded not working
+
 ## 0.10.0
 
 - Feature: Versilian VCSL instrument (not fully implemented)
