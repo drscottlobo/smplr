@@ -126,6 +126,27 @@ All instruments share some configuration options that are passed as second argum
 - `onStart`: a function that is called when starting a note. It receives the note started as parameter. Bear in mind that the time this function is called is not precise, and it's determined by lookahead.
 - `onEnded`: a function that is called when the note ends. It receives the started note as parameter.
 
+#### Usage with standardized-audio-context
+
+This package should be compatible with [standardized-audio-context](https://github.com/chrisguttandin/standardized-audio-context):
+
+```js
+import { AudioContext } from "standardized-audio-context";
+
+const context = new AudioContext();
+const piano = new SplendidGrandPiano(context);
+```
+
+However, if you are using Typescript, you might need to "force cast" the types:
+
+```ts
+import { Soundfont } from "smplr";
+import { AudioContext as StandardizedAudioContext } from "standardized-audio-context";
+
+const context = new StandardizedAudioContext() as unknown as AudioContext;
+const marimba = new Soundfont(context, { instrument: "marimba" });
+```
+
 ### Play
 
 #### Start and stop notes
@@ -275,16 +296,21 @@ const piano = new SplendidGrandPiano(context, { storage });
 
 ### Sampler
 
-An audio buffer sampler.
+An audio buffer sampler. Pass a `buffers` object with the files to be load:
 
 ```js
 import { Sampler } from "smplr";
 
-const samples = {
+const buffers = {
   kick: "https://danigb.github.io/samples/drum-machines/808-mini/kick.m4a",
   snare: "https://danigb.github.io/samples/drum-machines/808-mini/snare-1.m4a",
 };
-const sampler = new Sampler(new AudioContext(), { samples });
+const sampler = new Sampler(new AudioContext(), { buffers });
+```
+
+And then use the name of the buffer as note name:
+
+```js
 sampler.start({ note: "kick" });
 ```
 
@@ -348,6 +374,30 @@ import { SplendidGrandPiano } from "smplr";
 const piano = new SplendidGrandPiano(new AudioContext());
 
 piano.start({ note: "C4" });
+```
+
+#### SplendidGrandPiano constructor
+
+The second argument of the constructor accepts the following options:
+
+- `baseUrl`:
+- `detune`: global detune in cents (0 if not specified)
+- `velocity`: default velocity (100 if not specified)
+- `volume`: default volume (100 if not specified)
+- `decayTime`: default decay time (0.5 seconds)
+- `notesToLoad`: an object with the following shape: `{ notes: number[], velocityRange: [number, number]}` to specify a subset of notes to load
+
+Example:
+
+```ts
+const piano = new SplendidGrandPiano(context, {
+  detune: -20,
+  volume: 80,
+  notesToLoad: {
+    notes: [60],
+    velocityRange: [1, 127],
+  },
+});
 ```
 
 ### Electric Piano

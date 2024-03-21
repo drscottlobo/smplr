@@ -1,11 +1,20 @@
 # smplr
 
-## 0.11.0
+## 0.12.x
 
+- 0.12.0 SplendidGrandPiano supports loading a subset of notes
+- 0.12.1 Fix npm publish problem
+- 0.12.2 Fix non-integer midi in 1 note length regions (#61)
+
+## 0.11.x
+
+- 0.11.3 Add support for standardized audio context
+- 0.11.2 Resolved an issue in the sfz sampler that prevented any sound from being played when the velocity was not specified.
+- 0.11.1 Fix onStart callback when using `start` on Soundfont
 - Add `onStart` sample event
 - Add `onStart` and `onEnded` global events
 
-## 0.10.3
+## 0.10.x
 
 - 0.10.3 - Fix output connection
 - 0.10.2 - Remove console.log
